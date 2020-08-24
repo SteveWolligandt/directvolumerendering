@@ -52,9 +52,6 @@ mat4 look_at_matrix(vec3 const& eye);
 void update_modelview_matrices() {
   vec3 eye{radius * std::sin(phi) * std::sin(theta), radius * std::cos(phi),
            radius * std::sin(phi) * std::cos(theta)};
-  std::cerr << "eye: [" << eye[0] << ", " << eye[1] << ", " << eye[2] << "]\n";
-  std::cerr << theta << '\n';
-  std::cerr << phi << '\n';
 
   auto const view_mat = look_at_matrix(eye);
   if (cube_shader) {
@@ -103,12 +100,10 @@ struct : yavin::window_listener {
     radius -= 0.05;
 
     radius = std::max<GLfloat>(radius, 0.001f);
-    std::cerr << radius << '\n';
     update_modelview_matrices();
   }
   void on_wheel_down() override {
     radius += 0.05;
-    std::cerr << radius << '\n';
     update_modelview_matrices();
   }
 } listener;
