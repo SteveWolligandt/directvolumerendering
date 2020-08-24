@@ -3,112 +3,55 @@
 #include <yavin>
 //==============================================================================
 GLsizei width = 500, height = 500;
+using vec2 = std::array<GLfloat, 2>;
 using vec3 = std::array<GLfloat, 3>;
 using mat4 = std::array<GLfloat, 16>;
 yavin::window win{"dvr", width, height};
 std::unique_ptr<yavin::tex2rgb<GLfloat>> cube_back_tex, cube_front_tex;
+std::unique_ptr<yavin::texdepth32f> depth_tex;
 std::unique_ptr<yavin::shader> cube_shader;
+std::unique_ptr<yavin::shader> volume_shader;
 std::unique_ptr<yavin::tex3r<GLfloat>> data_tex;
 std::unique_ptr<yavin::indexeddata<vec3, vec3>> cube_data;
+std::unique_ptr<yavin::indexeddata<vec2>> fullscreen_quad;
 
-GLfloat theta = M_PI , phi = M_PI / 2, radius = 3;
+GLfloat theta = M_PI, phi = M_PI / 2, radius = 3;
 GLfloat old_mouse_x, old_mouse_y;
 GLfloat cur_mouse_x, cur_mouse_y;
 bool mouse_down = false;
 //==============================================================================
 void on_window_resize(size_t width, size_t height);
 void render_cube();
+void render_volume();
 void init();
 void init_cube();
 void init_textures();
 void init_shaders();
 void render_loop();
 constexpr mat4 orthographic_matrix(GLfloat const l, GLfloat const r,
-                                         GLfloat const b, GLfloat const t,
-                                         GLfloat const n, GLfloat const f) {
-  return {
-      2 / (r - l),        GLfloat(0),         GLfloat(0),         GLfloat(0),
-      GLfloat(0),         2 / (t - b),        GLfloat(0),         GLfloat(0),
-      GLfloat(0),         GLfloat(0),         -2 / (f - n),       GLfloat(0),
-      -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), GLfloat(1)};
-}
-
-
-
-constexpr auto perspective_matrix(GLfloat const l, GLfloat const r,
-                                  GLfloat const b, GLfloat const t,
-                                  GLfloat const n, GLfloat const f) {
-  return mat4{2 * n / (r - l),   GLfloat(0),        GLfloat(0),
-              GLfloat(0),
-
-              GLfloat(0),        2 * n / (t - b),   GLfloat(0),
-              GLfloat(0),
-
-              (r + l) / (r - l), (t + b) / (t - b), -(f + n) / (f - n),
-              GLfloat(-1),
-
-              GLfloat(0),        GLfloat(0),        -2 * f * n / (f - n),
-              GLfloat(0)
-
-  };
-}
+                                   GLfloat const b, GLfloat const t,
+                                   GLfloat const n, GLfloat const f);
 //------------------------------------------------------------------------------
-auto perspective_matrix(GLfloat const angle_of_view,
+mat4 perspective_matrix(GLfloat const l, GLfloat const r, GLfloat const b,
+                        GLfloat const t, GLfloat const n, GLfloat const f);
+//------------------------------------------------------------------------------
+mat4 perspective_matrix(GLfloat const angle_of_view,
                         GLfloat const image_aspect_ratio, GLfloat const near,
-                        GLfloat const far) {
-  GLfloat const scale = std::tan(angle_of_view * 0.5 * M_PI / 180) * near;
-  GLfloat const r = image_aspect_ratio * scale;
-  GLfloat const l = -r;
-  GLfloat const t = scale;
-  GLfloat const b = -t;
-  return perspective_matrix(l, r, b, t, near, far);
-}
-
-// Calculate the cross product and return it
-constexpr auto cross(vec3 const& srcA, vec3 const& srcB) {
-  return vec3{srcA[1] * srcB[2] - srcA[2] * srcB[1],
-              srcA[2] * srcB[0] - srcA[0] * srcB[2],
-              srcA[0] * srcB[1] - srcA[1] * srcB[0]};
-}
-// Calculate the cross product and return it
-constexpr auto dot(vec3 const& srcA, vec3 const& srcB) {
-  return srcA[0] * srcB[0] + srcA[1] * srcB[1] + srcA[2] * srcB[2];
-}
-
-// Normalize the input vector
-void normalize(vec3& vec) {
-  const GLfloat invLen =
-      1.f / std::sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
-  vec[0] *= invLen;
-  vec[1] *= invLen;
-  vec[2] *= invLen;
-}
-void scale(vec3& v, GLfloat s) {
-  v[0] *= s;
-  v[1] *= s;
-  v[2] *= s;
-}
+                        GLfloat const far);
 //------------------------------------------------------------------------------
-auto look_at_matrix(vec3 const& eye) {
-  vec3 up{0.0f, 1.0f, 0.0f};
-  vec3 D{-eye[0],- eye[1],- eye[2]};
-  normalize(D);
-  const auto R = cross(up, D);
-  const auto U = cross(D, R);
-  //return mat4{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-  return mat4{  R[0],   R[1],   R[2], 0.0f,
-                U[0],   U[1],   U[2], 0.0f,
-                D[0],   D[1],   D[2], 0.0f,
-              eye[0], eye[1], eye[2], 1.0f};
-}
-
+// Calculate the cross product and return it
+constexpr vec3 cross(vec3 const& a, vec3 const& b);
+// Calculate the cross product and return it
+constexpr GLfloat dot(vec3 const& a, vec3 const& b);
+// Normalize the input vector
+void normalize(vec3& vec);
+void scale(vec3& v, GLfloat s);
+//------------------------------------------------------------------------------
+mat4 look_at_matrix(vec3 const& eye);
 //==============================================================================
 void update_modelview_matrices() {
-  vec3 eye{
-    radius * std::sin(phi) * std::sin(theta),
-    radius * std::cos(phi),
-    radius * std::sin(phi) * std::cos(theta)
-  };
+  vec3 eye{radius * std::sin(phi) * std::sin(theta), radius * std::cos(phi),
+           radius * std::sin(phi) * std::cos(theta)};
   std::cerr << "eye: [" << eye[0] << ", " << eye[1] << ", " << eye[2] << "]\n";
   std::cerr << theta << '\n';
   std::cerr << phi << '\n';
@@ -122,6 +65,17 @@ struct : yavin::window_listener {
   void on_resize(int width, int height) override {
     on_window_resize(width, height);
   }
+  void on_key_pressed(yavin::key k) override {
+    if (k == yavin::KEY_1) {
+      volume_shader->set_uniform("mode", 1);
+    } else if (k == yavin::KEY_2) {
+      volume_shader->set_uniform("mode", 2);
+    } else if (k == yavin::KEY_3) {
+      volume_shader->set_uniform("mode", 3);
+    } else if (k == yavin::KEY_4) {
+      volume_shader->set_uniform("mode", 4);
+    }
+  }
   void on_mouse_motion(int x, int y) override {
     cur_mouse_x = x;
     cur_mouse_y = y;
@@ -132,7 +86,7 @@ struct : yavin::window_listener {
       old_mouse_x = cur_mouse_x;
       old_mouse_y = cur_mouse_y;
 
-      theta += off_x * 0.001;
+      theta -= off_x * 0.001;
       phi += off_y * 0.001;
       phi = std::min<GLfloat>(M_PI, phi);
       phi = std::max<GLfloat>(0, phi);
@@ -152,9 +106,9 @@ struct : yavin::window_listener {
     std::cerr << radius << '\n';
     update_modelview_matrices();
   }
-  void on_wheel_down() {
+  void on_wheel_down() override {
     radius += 0.05;
-    std::cerr << radius<< '\n';
+    std::cerr << radius << '\n';
     update_modelview_matrices();
   }
 } listener;
@@ -172,6 +126,7 @@ void render_loop() {
     yavin::gl::viewport(0, 0, width, height);
 
     render_cube();
+    render_volume();
 
     win.render_imgui();
     win.swap_buffers();
@@ -188,8 +143,10 @@ void init() {
 //------------------------------------------------------------------------------
 void init_cube() {
   cube_data = std::make_unique<yavin::indexeddata<vec3, vec3>>();
+
   cube_data->vertexbuffer().reserve(8);
-  cube_data->vertexbuffer().push_back({-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f});
+  cube_data->vertexbuffer().push_back({-1.0f, -1.0f, -1.0f},
+                                      {0.0f, 0.0f, 0.0f});
   cube_data->vertexbuffer().push_back({1.0f, -1.0f, -1.0f}, {1.0f, 0.0f, 0.0f});
   cube_data->vertexbuffer().push_back({-1.0f, 1.0f, -1.0f}, {0.0f, 1.0f, 0.0f});
   cube_data->vertexbuffer().push_back({1.0f, 1.0f, -1.0f}, {1.0f, 1.0f, 0.0f});
@@ -201,34 +158,82 @@ void init_cube() {
 
   cube_data->indexbuffer().reserve(12 * 3);
 
+  // front
   cube_data->indexbuffer().push_back(0);
   cube_data->indexbuffer().push_back(1);
   cube_data->indexbuffer().push_back(2);
-
   cube_data->indexbuffer().push_back(1);
   cube_data->indexbuffer().push_back(3);
   cube_data->indexbuffer().push_back(2);
 
+  // back
   cube_data->indexbuffer().push_back(4);
   cube_data->indexbuffer().push_back(6);
   cube_data->indexbuffer().push_back(5);
-
   cube_data->indexbuffer().push_back(5);
   cube_data->indexbuffer().push_back(6);
   cube_data->indexbuffer().push_back(7);
 
+  // left
   cube_data->indexbuffer().push_back(1);
   cube_data->indexbuffer().push_back(5);
   cube_data->indexbuffer().push_back(3);
-
   cube_data->indexbuffer().push_back(5);
   cube_data->indexbuffer().push_back(7);
   cube_data->indexbuffer().push_back(3);
+
+  // right
+  cube_data->indexbuffer().push_back(4);
+  cube_data->indexbuffer().push_back(0);
+  cube_data->indexbuffer().push_back(6);
+  cube_data->indexbuffer().push_back(0);
+  cube_data->indexbuffer().push_back(2);
+  cube_data->indexbuffer().push_back(6);
+
+  // top
+  cube_data->indexbuffer().push_back(2);
+  cube_data->indexbuffer().push_back(3);
+  cube_data->indexbuffer().push_back(6);
+  cube_data->indexbuffer().push_back(3);
+  cube_data->indexbuffer().push_back(7);
+  cube_data->indexbuffer().push_back(6);
+
+  // bottom
+  cube_data->indexbuffer().push_back(0);
+  cube_data->indexbuffer().push_back(4);
+  cube_data->indexbuffer().push_back(1);
+  cube_data->indexbuffer().push_back(1);
+  cube_data->indexbuffer().push_back(4);
+  cube_data->indexbuffer().push_back(5);
+
+  fullscreen_quad = std::make_unique<yavin::indexeddata<vec2>>();
+  fullscreen_quad->vertexbuffer().reserve(4);
+  fullscreen_quad->vertexbuffer().push_back({0.0f, 0.0f});
+  fullscreen_quad->vertexbuffer().push_back({1.0f, 0.0f});
+  fullscreen_quad->vertexbuffer().push_back({0.0f, 1.0f});
+  fullscreen_quad->vertexbuffer().push_back({1.0f, 1.0f});
+  fullscreen_quad->vertexbuffer().reserve(6);
+  fullscreen_quad->indexbuffer().push_back(0);
+  fullscreen_quad->indexbuffer().push_back(1);
+  fullscreen_quad->indexbuffer().push_back(2);
+  fullscreen_quad->indexbuffer().push_back(1);
+  fullscreen_quad->indexbuffer().push_back(3);
+  fullscreen_quad->indexbuffer().push_back(2);
 }
 //------------------------------------------------------------------------------
 void init_textures() {
   cube_back_tex = std::make_unique<yavin::tex2rgb<GLfloat>>(width, height);
   cube_front_tex = std::make_unique<yavin::tex2rgb<GLfloat>>(width, height);
+  depth_tex = std::make_unique<yavin::texdepth32f>(width, height);
+
+  std::vector<GLfloat> data(50*50*50, 0.005f);
+  size_t i = 25 + 25 * 50 + 25 * 50 * 50;
+  data[i++] = 1;
+  data[i++] = 1;
+  data[i++] = 1;
+  data[i++] = 1;
+  data_tex = std::make_unique<yavin::tex3r<GLfloat>>();
+  data_tex->upload_data(data, 50, 50, 50);
 }
 //------------------------------------------------------------------------------
 void init_shaders() {
@@ -254,6 +259,72 @@ void init_shaders() {
       "}",
       yavin::SOURCE);
   cube_shader->create();
+
+  volume_shader = std::make_unique<yavin::shader>();
+  volume_shader->add_stage<yavin::vertexshader>(
+      "#version 330 core\n"
+      "layout(location = 0) in vec2 pos_vert;\n"
+      "uniform mat4 projection_mat;\n"
+      "out vec2 uv_frag;\n"
+      "void main() {\n"
+      "  gl_Position = projection_mat * vec4(pos_vert, 0, 1);"
+      "  uv_frag = pos_vert;\n"
+      "}\n",
+      yavin::SOURCE);
+  volume_shader->add_stage<yavin::fragmentshader>(
+      "#version 330 core\n"
+      "uniform sampler2D cube_front_tex;\n"
+      "uniform sampler2D cube_back_tex;\n"
+      "uniform sampler3D data_tex;\n"
+      "uniform int mode;\n"
+      "in vec2 uv_frag;\n"
+      "out vec3 outcol;\n"
+      "void main() {\n"
+      "  if (mode == 1) {\n"
+      "    vec3 cur_uvw = texture(cube_front_tex, uv_frag).rgb;\n"
+      "    vec3 uvw_back = texture(cube_back_tex, uv_frag).rgb;\n"
+      "    if (cur_uvw.r == -1) {\n"
+      "      outcol = vec3(0);\n"
+      "    } else {\n"
+      "      float accumulated_alpha = 0;\n"
+      "      vec3 accumulated_color = vec3(0);\n"
+      "      vec3 dir = uvw_back - cur_uvw;\n"
+      "      float len = length(dir);\n"
+      "      int num_steps = int(ceil(len / 0.01));\n"
+      "      vec3 step = dir / num_steps;\n"
+      "      for (int i = 0 ; i < num_steps + 1; ++i) {\n"
+      "        float sample       = texture(data_tex, cur_uvw).r;\n"
+      "        vec3  sample_color = vec3(sample);\n"
+      "        float sample_alpha = sample;\n"
+      "        accumulated_color += (1 - accumulated_alpha) * sample_alpha * sample_color;\n"
+      "        accumulated_alpha += (1 - accumulated_alpha) * sample_alpha;\n"
+      "        if (accumulated_alpha > 0.95) { break; }\n"
+      "        cur_uvw += step;\n"
+      "      }\n"
+      "      outcol = accumulated_color;\n"
+      "    }\n"
+      "  } else if (mode == 2) {\n"
+      "    outcol = texture(cube_front_tex, uv_frag).rgb;\n"
+      "  } else if(mode == 3) {\n"
+      "    outcol = texture(cube_back_tex, uv_frag).rgb;\n"
+      "  } else if(mode == 4) {\n"
+      "    vec3 uvw = texture(cube_back_tex, uv_frag).rgb;\n"
+      "    if (uvw.r == -1) {\n"
+      "      outcol = vec3(1);\n"
+      "    } else {\n"
+      "      float sample = texture(data_tex, uvw).r;\n"
+      "      outcol = vec3(sample);\n"
+      "    }\n"
+      "  }\n"
+      "}\n",
+      yavin::SOURCE);
+  volume_shader->create();
+  volume_shader->set_uniform("cube_front_tex", 0);
+  volume_shader->set_uniform("cube_back_tex", 1);
+  volume_shader->set_uniform("data_tex", 2);
+  volume_shader->set_uniform_mat4(
+      "projection_mat", orthographic_matrix(0, 1, 0, 1, -1, 1).data());
+
   update_modelview_matrices();
 }
 //------------------------------------------------------------------------------
@@ -265,22 +336,108 @@ void on_window_resize(size_t new_width, size_t new_height) {
   if (cube_shader) {
     cube_shader->set_uniform_mat4("projection_mat", projection_matrix.data());
   }
+  if (cube_back_tex) {
+    cube_back_tex->resize(new_width, new_height);
+  }
+  if (cube_front_tex) {
+    cube_front_tex->resize(new_width, new_height);
+  }
+  if (depth_tex) {
+    depth_tex->resize(new_width, new_height);
+  }
 }
 //------------------------------------------------------------------------------
 void render_cube() {
   cube_shader->bind();
   yavin::enable_face_culling();
-  //
-   //yavin::set_front_face_culling();
-  // yavin::framebuffer fbo_back{*cube_back_tex};
-  // fbo_back->bind();
-  // yavin::clear_color_buffer();
-  // cube_data->draw_triangles();
-  //
+  yavin::enable_depth_test();
+  yavin::gl::front_face(GL_CW);
+
   yavin::set_back_face_culling();
-  // yavin::framebuffer fbo_front{*cube_front_tex};
-  // fbo_front->bind();
+  yavin::framebuffer fbo_front{*cube_front_tex, *depth_tex};
+  fbo_front.bind();
+  yavin::gl::clear_color(-1, -1, -1, -1);
+  yavin::clear_color_depth_buffer();
+  cube_data->draw_triangles();
+
+  yavin::set_front_face_culling();
+  yavin::framebuffer fbo_back{*cube_back_tex, *depth_tex};
+  fbo_back.bind();
+  yavin::clear_color_depth_buffer();
   cube_data->draw_triangles();
 
   yavin::disable_face_culling();
+  yavin::disable_depth_test();
+}
+void render_volume() {
+  cube_front_tex->bind(0);
+  cube_back_tex->bind(1);
+  data_tex->bind(2);
+  volume_shader->bind();
+  fullscreen_quad->draw_triangles();
+}
+constexpr mat4 orthographic_matrix(GLfloat const l, GLfloat const r,
+                                   GLfloat const b, GLfloat const t,
+                                   GLfloat const n, GLfloat const f) {
+  return {
+      2 / (r - l),        GLfloat(0),         GLfloat(0),         GLfloat(0),
+      GLfloat(0),         2 / (t - b),        GLfloat(0),         GLfloat(0),
+      GLfloat(0),         GLfloat(0),         -2 / (f - n),       GLfloat(0),
+      -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), GLfloat(1)};
+}
+mat4 perspective_matrix(GLfloat const l, GLfloat const r, GLfloat const b,
+                        GLfloat const t, GLfloat const n, GLfloat const f) {
+  return {2 * n / (r - l),   GLfloat(0),        GLfloat(0),
+          GLfloat(0),
+
+          GLfloat(0),        2 * n / (t - b),   GLfloat(0),
+          GLfloat(0),
+
+          (r + l) / (r - l), (t + b) / (t - b), -(f + n) / (f - n),
+          GLfloat(-1),
+
+          GLfloat(0),        GLfloat(0),        -2 * f * n / (f - n),
+          GLfloat(0)
+
+  };
+}
+mat4 perspective_matrix(GLfloat const angle_of_view,
+                        GLfloat const image_aspect_ratio, GLfloat const near,
+                        GLfloat const far) {
+  GLfloat const scale = std::tan(angle_of_view * 0.5 * M_PI / 180) * near;
+  GLfloat const r = image_aspect_ratio * scale;
+  GLfloat const l = -r;
+  GLfloat const t = scale;
+  GLfloat const b = -t;
+  return perspective_matrix(l, r, b, t, near, far);
+}
+constexpr vec3 cross(vec3 const& a, vec3 const& b) {
+  return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+          a[0] * b[1] - a[1] * b[0]};
+}
+// Calculate the cross product and return it
+constexpr GLfloat dot(vec3 const& a, vec3 const& b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+// Normalize the input vector
+void normalize(vec3& v) {
+  GLfloat const inv_len = 1 / std::sqrt(dot(v, v));
+  v[0] *= inv_len;
+  v[1] *= inv_len;
+  v[2] *= inv_len;
+}
+void scale(vec3& v, GLfloat s) {
+  v[0] *= s;
+  v[1] *= s;
+  v[2] *= s;
+}
+mat4 look_at_matrix(vec3 const& eye) {
+  vec3 up{0.0f, 1.0f, 0.0f};
+  vec3 D{-eye[0], -eye[1], -eye[2]};
+  normalize(D);
+  vec3 const R{D[2], 0, -D[0]};
+  auto const U = cross(D, R);
+  return mat4{D[2], 0,    -D[0], 0.0f, U[0],   U[1],   U[2],   0.0f,
+              D[0], D[1], D[2],  0.0f, eye[0], eye[1], eye[2], 1.0f};
 }
