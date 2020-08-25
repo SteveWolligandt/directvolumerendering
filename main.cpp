@@ -47,15 +47,18 @@ constexpr GLfloat dot(vec3 const& a, vec3 const& b);
 void normalize(vec3& vec);
 void scale(vec3& v, GLfloat s);
 //------------------------------------------------------------------------------
-mat4 look_at_matrix(vec3 const& eye);
+mat4 look_at_matrix(vec3 const& eye, vec3 const& to, vec3 const& up);
 //==============================================================================
 void update_modelview_matrices() {
-  vec3 eye{radius * std::sin(phi) * std::sin(theta), radius * std::cos(phi),
+  vec3 eye{radius * std::sin(phi) * std::sin(theta),
+           radius * std::cos(phi),
            radius * std::sin(phi) * std::cos(theta)};
+  vec3 to{0, 0, 0};
+  vec3 up{0, 1, 0};
 
-  auto const view_mat = look_at_matrix(eye);
+  auto const V = look_at_matrix(eye, to, up);
   if (cube_shader) {
-    cube_shader->set_uniform_mat4("modelview_mat", view_mat.data());
+    cube_shader->set_uniform_mat4("modelview_mat", V.data());
   }
 }
 struct : yavin::window_listener {
@@ -83,8 +86,8 @@ struct : yavin::window_listener {
       old_mouse_x = cur_mouse_x;
       old_mouse_y = cur_mouse_y;
 
-      theta -= off_x * 0.001;
-      phi += off_y * 0.001;
+      theta -= off_x * 0.005;
+      phi -= off_y * 0.005;
       phi = std::min<GLfloat>(M_PI, phi);
       phi = std::max<GLfloat>(0, phi);
       update_modelview_matrices();
@@ -221,14 +224,23 @@ void init_textures() {
   cube_front_tex = std::make_unique<yavin::tex2rgb<GLfloat>>(width, height);
   depth_tex = std::make_unique<yavin::texdepth32f>(width, height);
 
-  std::vector<GLfloat> data(50*50*50, 0.005f);
-  size_t i = 25 + 25 * 50 + 25 * 50 * 50;
-  data[i++] = 1;
-  data[i++] = 1;
-  data[i++] = 1;
-  data[i++] = 1;
+  size_t width = 100, height = 100, depth = 100;
+  std::vector<GLfloat> data(width * height * depth);
+  for (size_t w = 0; w < depth; ++w) {
+    for (size_t v = 0; v < height; ++v) {
+      for (size_t u = 0; u < width; ++u) {
+        float norm_u = u / float(width - 1);
+        float norm_v = v / float(height - 1);
+        float norm_w = w / float(depth - 1);
+        data[u + v * width + w * width * height] =
+            (std::cos(norm_u * 2 * M_PI * 3 + M_PI) * 0.5 + 0.5) *
+            (std::cos(norm_v * 2 * M_PI * 3 + M_PI) * 0.5 + 0.5) *
+            (std::cos(norm_w * 2 * M_PI * 3 + M_PI) * 0.5 + 0.5);
+      }
+    }
+  }
   data_tex = std::make_unique<yavin::tex3r<GLfloat>>();
-  data_tex->upload_data(data, 50, 50, 50);
+  data_tex->upload_data(data, width, height, depth);
 }
 //------------------------------------------------------------------------------
 void init_shaders() {
@@ -241,7 +253,7 @@ void init_shaders() {
       "uniform mat4 modelview_mat;\n"
       "uniform mat4 projection_mat;\n"
       "void main() {\n"
-      "  gl_Position = projection_mat * modelview_mat * vec4(pos_vert, 1);"
+      "  gl_Position = projection_mat * inverse(modelview_mat) * vec4(pos_vert, 1);"
       "  uvw_frag = uvw_vert;\n"
       "}\n",
       yavin::SOURCE);
@@ -274,12 +286,13 @@ void init_shaders() {
       "uniform int mode;\n"
       "in vec2 uv_frag;\n"
       "out vec3 outcol;\n"
+      "const vec3 bgcol = vec3(1,1,1);\n"
       "void main() {\n"
       "  if (mode == 1) {\n"
       "    vec3 cur_uvw = texture(cube_front_tex, uv_frag).rgb;\n"
       "    vec3 uvw_back = texture(cube_back_tex, uv_frag).rgb;\n"
       "    if (cur_uvw.r == -1) {\n"
-      "      outcol = vec3(0);\n"
+      "      outcol = bgcol;\n"
       "    } else {\n"
       "      float accumulated_alpha = 0;\n"
       "      vec3 accumulated_color = vec3(0);\n"
@@ -296,7 +309,7 @@ void init_shaders() {
       "        if (accumulated_alpha > 0.95) { break; }\n"
       "        cur_uvw += step;\n"
       "      }\n"
-      "      outcol = accumulated_color;\n"
+      "      outcol = accumulated_color * accumulated_alpha + bgcol * (1-accumulated_alpha);\n"
       "    }\n"
       "  } else if (mode == 2) {\n"
       "    outcol = texture(cube_front_tex, uv_frag).rgb;\n"
@@ -317,6 +330,7 @@ void init_shaders() {
   volume_shader->set_uniform("cube_front_tex", 0);
   volume_shader->set_uniform("cube_back_tex", 1);
   volume_shader->set_uniform("data_tex", 2);
+  volume_shader->set_uniform("mode", 1);
   volume_shader->set_uniform_mat4(
       "projection_mat", orthographic_matrix(0, 1, 0, 1, -1, 1).data());
 
@@ -371,29 +385,14 @@ void render_volume() {
   volume_shader->bind();
   fullscreen_quad->draw_triangles();
 }
-constexpr mat4 orthographic_matrix(GLfloat const l, GLfloat const r,
-                                   GLfloat const b, GLfloat const t,
-                                   GLfloat const n, GLfloat const f) {
-  return {
-      2 / (r - l),        GLfloat(0),         GLfloat(0),         GLfloat(0),
-      GLfloat(0),         2 / (t - b),        GLfloat(0),         GLfloat(0),
-      GLfloat(0),         GLfloat(0),         -2 / (f - n),       GLfloat(0),
-      -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), GLfloat(1)};
-}
 mat4 perspective_matrix(GLfloat const l, GLfloat const r, GLfloat const b,
                         GLfloat const t, GLfloat const n, GLfloat const f) {
-  return {2 * n / (r - l),   GLfloat(0),        GLfloat(0),
-          GLfloat(0),
-
-          GLfloat(0),        2 * n / (t - b),   GLfloat(0),
-          GLfloat(0),
-
-          (r + l) / (r - l), (t + b) / (t - b), -(f + n) / (f - n),
-          GLfloat(-1),
-
-          GLfloat(0),        GLfloat(0),        -2 * f * n / (f - n),
-          GLfloat(0)
-
+  GLfloat const z = 0, no = -1;
+  return {
+    2 * n / (r - l), z, z, z,
+    z, 2 * n / (t - b), z,z,
+    (r + l) / (r - l), (t + b) / (t - b), -(f + n) / (f - n), no,
+    z, z, -2 * f * n / (f - n), z
   };
 }
 mat4 perspective_matrix(GLfloat const angle_of_view,
@@ -427,12 +426,13 @@ void scale(vec3& v, GLfloat s) {
   v[1] *= s;
   v[2] *= s;
 }
-mat4 look_at_matrix(vec3 const& eye) {
-  vec3 up{0.0f, 1.0f, 0.0f};
-  vec3 D{-eye[0], -eye[1], -eye[2]};
-  normalize(D);
-  vec3 const R{D[2], 0, -D[0]};
-  auto const U = cross(D, R);
-  return mat4{D[2], 0,    -D[0], 0.0f, U[0],   U[1],   U[2],   0.0f,
-              D[0], D[1], D[2],  0.0f, eye[0], eye[1], eye[2], 1.0f};
+mat4 look_at_matrix(vec3 const& eye, vec3 const& to, vec3 const& up) {
+  vec3 Z{eye[0] - to[0], eye[1] - to[1], eye[2] - to[2]};
+  normalize(Z);
+  auto const X = cross(up, Z);
+  auto const Y = cross(Z, X);
+  return mat4{  X[0],   X[1],   X[2], 0.0f,
+                Y[0],   Y[1],   Y[2], 0.0f,
+                Z[0],   Z[1],   Z[2], 0.0f,
+              eye[0], eye[1], eye[2], 1.0f};
 }
