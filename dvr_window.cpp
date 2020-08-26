@@ -1,3 +1,4 @@
+#include <chrono>
 #include "dvr_window.h"
 #include "fullscreen_quad.h"
 #include "linalg.h"
@@ -16,6 +17,7 @@ dvr_window::dvr_window()
       m_fov, (float)m_width / (float)m_height, m_nearplane, m_farplane));
 
   update_modelview_matrix();
+  render_volume();
   render_loop();
 }
 //==============================================================================
@@ -32,14 +34,12 @@ void dvr_window::render_loop() {
   bool run = true;
   while (run) {
     refresh();
-    yavin::gl::clear_color(255, 255, 255, 255);
-    yavin::clear_color_buffer();
-    yavin::gl::viewport(0, 0, m_width, m_height);
-
-    render_volume();
-
+    if (m_mouse_down) {
+      render_volume();
+    }
     render_imgui();
     swap_buffers();
+    std::this_thread::sleep_for(std::chrono::milliseconds{10});
   }
 }
 //------------------------------------------------------------------------------
@@ -63,6 +63,9 @@ void dvr_window::create_volume_data() {
 }
 //------------------------------------------------------------------------------
 void dvr_window::render_volume() {
+  yavin::gl::clear_color(255, 255, 255, 255);
+  yavin::clear_color_buffer();
+  yavin::gl::viewport(0, 0, m_width, m_height);
   render_cube();
   m_cube_front_tex.bind(0);
   m_cube_back_tex.bind(1);
@@ -157,10 +160,12 @@ void dvr_window::on_wheel_up() {
 
   m_radius = std::max<float>(m_radius, 0.001f);
   update_modelview_matrix();
+    render_volume();
 }
 //------------------------------------------------------------------------------
 void dvr_window::on_wheel_down() {
   yavin::window::on_wheel_down();
   m_radius += 0.05;
   update_modelview_matrix();
+    render_volume();
 }
