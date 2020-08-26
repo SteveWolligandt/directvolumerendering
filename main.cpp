@@ -429,10 +429,20 @@ void scale(vec3& v, GLfloat s) {
 mat4 look_at_matrix(vec3 const& eye, vec3 const& to, vec3 const& up) {
   vec3 Z{eye[0] - to[0], eye[1] - to[1], eye[2] - to[2]};
   normalize(Z);
-  auto const X = cross(up, Z);
+  auto X = cross(up, Z);
+  normalize(X);
   auto const Y = cross(Z, X);
   return mat4{  X[0],   X[1],   X[2], 0.0f,
                 Y[0],   Y[1],   Y[2], 0.0f,
                 Z[0],   Z[1],   Z[2], 0.0f,
               eye[0], eye[1], eye[2], 1.0f};
+}
+constexpr mat4 orthographic_matrix(GLfloat const l, GLfloat const r,
+                                         GLfloat const b, GLfloat const t,
+                                         GLfloat const n, GLfloat const f) {
+  return {
+      2 / (r - l),        GLfloat(0),         GLfloat(0),         GLfloat(0),
+      GLfloat(0),         2 / (t - b),        GLfloat(0),         GLfloat(0),
+      GLfloat(0),         GLfloat(0),         -2 / (f - n),       GLfloat(0),
+      -(r + l) / (r - l), -(t + b) / (t - b), -(f + n) / (f - n), GLfloat(1)};
 }
