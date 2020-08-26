@@ -30,12 +30,14 @@ void dvr_window::update_modelview_matrix() {
   m_cube_shader.set_modelview_matrix(look_at_matrix(eye, to, up));
 }
 //------------------------------------------------------------------------------
+bool first_frame = true;
 void dvr_window::render_loop() {
   bool run = true;
   while (run) {
     refresh();
-    if (m_mouse_down) {
+    if (m_mouse_down || first_frame) {
       render_volume();
+      first_frame = false;
     }
     render_imgui();
     swap_buffers();
