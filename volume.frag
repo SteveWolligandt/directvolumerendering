@@ -6,6 +6,7 @@ uniform int mode;
 in vec2 uv_frag;
 out vec3 outcol;
 const vec3 bgcol = vec3(1,1,1);
+const float sample_distance = 0.01;
 void main() {
   if (mode == 1) {
     vec3 cur_uvw = texture(cube_front_tex, uv_frag).rgb;
@@ -17,7 +18,7 @@ void main() {
       vec3 accumulated_color = vec3(0);
       vec3 dir = uvw_back - cur_uvw;
       float len = length(dir);
-      int num_steps = int(ceil(len / 0.01));
+      int num_steps = int(ceil(len / sample_distance));
       vec3 step = dir / num_steps;
       for (int i = 0 ; i < num_steps + 1; ++i) {
         float sample       = texture(volume_data_tex, cur_uvw).r;
