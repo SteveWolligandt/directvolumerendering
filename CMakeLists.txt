@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 project(directvolumerendering)
-add_executable(dvr main.cpp linalg.cpp util.cpp unit_cube.cpp fullscreen_quad.cpp cube_shader.cpp volume_shader.cpp)
+add_executable(dvr main.cpp dvr_window.cpp linalg.cpp util.cpp unit_cube.cpp fullscreen_quad.cpp cube_shader.cpp volume_shader.cpp)
 
 find_package(yavin REQUIRED)
 target_link_libraries(dvr yavin)
