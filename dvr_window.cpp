@@ -99,13 +99,14 @@ void dvr_window::render_loop() {
   bool run = true;
   while (run) {
     refresh();
-    static float v[] = {0.000f, 0.000f, 1.000f, 1.000f};
+    static float v0[] = {0.0f, 1.0f, 0.0f, 0.0f};
+    static float v1[] = {1.0f, 1.0f, 1.0f, 1.0f};
     ImGui::SliderFloat("sample distance", &m_sample_distance, 0.001f, 0.1f);
-    ImGui::Bezier("alpha", v);
+    ImGui::Bezier("alpha", v0, v1);
     m_alpha_data.resize(m_num_alpha_samples);
     for (size_t i = 0; i < m_num_alpha_samples; ++i) {
       float const pos = i / (float)(m_num_alpha_samples - 1);
-      m_alpha_data[i] = ImGui::BezierValue(pos, v);
+      m_alpha_data[i] = ImGui::BezierValue(pos, v0, v1);
     }
     render_volume();
     render_imgui();

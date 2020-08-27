@@ -36,22 +36,23 @@ void bezier_table(ImVec2 P[4], ImVec2 results[steps + 1]) {
   }
   for (unsigned step = 0; step <= steps; ++step) {
     ImVec2 point = {K[step * 4 + 0] * P[0].x + K[step * 4 + 1] * P[1].x +
-                        K[step * 4 + 2] * P[2].x + K[step * 4 + 3] * P[3].x,
+                        K[step * 4 + 2] * P[3].x + K[step * 4 + 3] * P[2].x,
                     K[step * 4 + 0] * P[0].y + K[step * 4 + 1] * P[1].y +
-                        K[step * 4 + 2] * P[2].y + K[step * 4 + 3] * P[3].y};
+                        K[step * 4 + 2] * P[3].y + K[step * 4 + 3] * P[2].y};
     results[step] = point;
   }
 }
 
-float BezierValue(float dt01, float P[4]) {
+float BezierValue(float dt01, float v0[4], float v1[4]) {
   enum { STEPS = 256 };
-  ImVec2 Q[4] = {{0, 0}, {P[0], P[1]}, {P[2], P[3]}, {1, 1}};
+  ImVec2 Q[4] = {{v0[0], v0[1]}, {v0[2], v0[3]},
+                 {v1[0], v1[1]}, {v1[2], v1[3]}};
   ImVec2 results[STEPS + 1];
   bezier_table<STEPS>(Q, results);
   return results[(int)((dt01 < 0 ? 0 : dt01 > 1 ? 1 : dt01) * STEPS)].y;
 }
 
-int Bezier(const char* label, float P[4]) {
+int Bezier(const char* label, float v0[4], float v1[4]) {
   // visuals
   enum {
     SMOOTHNESS = 64
@@ -67,8 +68,8 @@ int Bezier(const char* label, float P[4]) {
   ImGuiWindow* Window = GetCurrentWindow();
   if (Window->SkipItems) return false;
 
-  // header and spacing
-  int changed = SliderFloat4(label, P, 0, 1, "%.3f", 1.0f);
+  //int changed = SliderFloat4(label, P, 0, 1, "%.3f", 1.0f);
+  int changed = 0;
   int hovered = IsItemActive() || IsItemHovered();  // IsItemDragged() ?
   Dummy(ImVec2(0, 3));
 
@@ -78,11 +79,6 @@ int Bezier(const char* label, float P[4]) {
   ImVec2 Canvas(dim, dim);
 
   ImRect bb(Window->DC.CursorPos, Window->DC.CursorPos + Canvas);
-  ItemSize(bb);
-  if (!ItemAdd(bb, NULL)) return changed;
-
-  // const ImGuiID id = Window->GetID(label);
-  // hovered |= 0 != IsHovered(ImRect(bb.Min, bb.Min + ImVec2(avail,dim)), id);
 
   RenderFrame(bb.Min, bb.Max, GetColorU32(ImGuiCol_FrameBg, 1), true,
               Style.FrameRounding);
@@ -100,7 +96,8 @@ int Bezier(const char* label, float P[4]) {
   }
 
   // eval curve
-  ImVec2 Q[4] = {{0, 0}, {P[0], P[1]}, {P[2], P[3]}, {1, 1}};
+  ImVec2 Q[4] = {{v0[0], v0[1]}, {v0[2], v0[3]},
+                 {v1[0], v1[1]}, {v1[2], v1[3]}};
   ImVec2 results[SMOOTHNESS + 1];
   bezier_table<SMOOTHNESS>(Q, results);
 
@@ -110,23 +107,25 @@ int Bezier(const char* label, float P[4]) {
     sprintf(buf, "0##%s", label);
 
     // handle grabbers
-    for (int i = 0; i < 2; ++i) {
-      ImVec2 pos =
-          ImVec2(P[i * 2 + 0], 1 - P[i * 2 + 1]) * (bb.Max - bb.Min) + bb.Min;
+    auto handle_grabber = [&](float* v) {
+      ImVec2 pos = ImVec2(v[0], 1 - v[1]) * (bb.Max - bb.Min) + bb.Min;
       SetCursorScreenPos(pos - ImVec2(GRAB_RADIUS, GRAB_RADIUS));
       InvisibleButton((buf[0]++, buf),
                       ImVec2(2 * GRAB_RADIUS, 2 * GRAB_RADIUS));
       if (IsItemActive() || IsItemHovered()) {
-        SetTooltip("(%4.3f, %4.3f)", P[i * 2 + 0], P[i * 2 + 1]);
+        SetTooltip("(%4.3f, %4.3f)", v[0], v[1]);
       }
       if (IsItemActive() && IsMouseDragging(0)) {
-        P[i * 2 + 0] += GetIO().MouseDelta.x / Canvas.x;
-        P[i * 2 + 1] -= GetIO().MouseDelta.y / Canvas.y;
+        v[0] += GetIO().MouseDelta.x / Canvas.x;
+        v[1] -= GetIO().MouseDelta.y / Canvas.y;
         changed = true;
       }
-    }
+    };
+    handle_grabber(v0+2);
+    handle_grabber(v1+2);
+    handle_grabber(v0);
+    handle_grabber(v1);
 
-    if (hovered || changed) DrawList->PushClipRectFullScreen();
 
     // draw curve
     {
@@ -146,30 +145,26 @@ int Bezier(const char* label, float P[4]) {
     float luma = IsItemActive() || IsItemHovered() ? 0.5f : 1.0f;
     ImVec4 pink(1.00f, 0.00f, 0.75f, luma), cyan(0.00f, 0.75f, 1.00f, luma);
     ImVec4 white(GetStyle().Colors[ImGuiCol_Text]);
-    ImVec2 p1 = ImVec2(P[0], 1 - P[1]) * (bb.Max - bb.Min) + bb.Min;
-    ImVec2 p2 = ImVec2(P[2], 1 - P[3]) * (bb.Max - bb.Min) + bb.Min;
-    DrawList->AddLine(ImVec2(bb.Min.x, bb.Max.y), p1, ImColor(white),
-                      LINE_WIDTH);
-    DrawList->AddLine(ImVec2(bb.Max.x, bb.Min.y), p2, ImColor(white),
-                      LINE_WIDTH);
-    DrawList->AddCircleFilled(p1, GRAB_RADIUS, ImColor(white));
-    DrawList->AddCircleFilled(p1, GRAB_RADIUS - GRAB_BORDER, ImColor(pink));
-    DrawList->AddCircleFilled(p2, GRAB_RADIUS, ImColor(white));
-    DrawList->AddCircleFilled(p2, GRAB_RADIUS - GRAB_BORDER, ImColor(cyan));
-
-    if (hovered || changed) DrawList->PopClipRect();
+    ImVec2 p00 = ImVec2(v0[0], 1 - v0[1]) * (bb.Max - bb.Min) + bb.Min;
+    ImVec2 p01 = ImVec2(v0[2], 1 - v0[3]) * (bb.Max - bb.Min) + bb.Min;
+    ImVec2 p10 = ImVec2(v1[0], 1 - v1[1]) * (bb.Max - bb.Min) + bb.Min;
+    ImVec2 p11 = ImVec2(v1[2], 1 - v1[3]) * (bb.Max - bb.Min) + bb.Min;
+    DrawList->AddLine(p00, p01, ImColor(white), LINE_WIDTH);
+    DrawList->AddLine(p10, p11, ImColor(white), LINE_WIDTH);
+    DrawList->AddCircleFilled(p00, GRAB_RADIUS, ImColor(white));
+    DrawList->AddCircleFilled(p00, GRAB_RADIUS - GRAB_BORDER, ImColor(pink));
+    DrawList->AddCircleFilled(p01, GRAB_RADIUS, ImColor(white));
+    DrawList->AddCircleFilled(p01, GRAB_RADIUS - GRAB_BORDER, ImColor(pink));
+    DrawList->AddCircleFilled(p10, GRAB_RADIUS, ImColor(white));
+    DrawList->AddCircleFilled(p10, GRAB_RADIUS - GRAB_BORDER, ImColor(cyan));
+    DrawList->AddCircleFilled(p11, GRAB_RADIUS, ImColor(white));
+    DrawList->AddCircleFilled(p11, GRAB_RADIUS - GRAB_BORDER, ImColor(cyan));
 
     // restore cursor pos
     SetCursorScreenPos(ImVec2(bb.Min.x, bb.Max.y + GRAB_RADIUS));  // :P
   }
 
   return changed;
-}
-
-void ShowBezierDemo() {
-  static float v[] = {0.000f, 0.000f, 1.000f, 1.000f};
-  Bezier("easeLinear", v);
-  std::cerr <<  ImGui::BezierValue( 0.5f, v ) << '\n';
 }
 }  // namespace ImGui
 #endif

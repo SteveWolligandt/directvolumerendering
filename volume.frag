@@ -23,7 +23,7 @@ vec3 render_volume() {
     for (int i = 0 ; i < num_steps + 1; ++i) {
       float sample       = texture(volume_data_tex, cur_uvw).r;
       vec3  sample_color = vec3(sample);
-      float sample_alpha = clamp(texture(alpha_tex, sample), 0, 1).r;
+      float sample_alpha = clamp(texture(alpha_tex, sample).r, 0.0, 1.0);
       accumulated_color +=
         (1 - accumulated_alpha) * sample_alpha * sample_color;
       accumulated_alpha +=

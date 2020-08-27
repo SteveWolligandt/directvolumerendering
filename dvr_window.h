@@ -14,7 +14,7 @@ struct dvr_window : yavin::window {
   std::vector<float> m_alpha_data;
   yavin::tex2rgb<float> m_cube_back_tex, m_cube_front_tex;
   yavin::tex3r<float> m_volume_data_tex;
-  size_t const m_num_alpha_samples = 100;
+  size_t const m_num_alpha_samples = 1000;
 
   yavin::indexeddata<vec3, vec3> m_cube_data;
   yavin::indexeddata<vec2> m_fullscreen_quad_data;
