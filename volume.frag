@@ -1,4 +1,5 @@
 #version 330 core
+uniform sampler1D alpha_tex;
 uniform sampler2D cube_front_tex;
 uniform sampler2D cube_back_tex;
 uniform sampler3D volume_data_tex;
@@ -6,7 +7,7 @@ uniform int mode;
 in vec2 uv_frag;
 out vec3 outcol;
 const vec3 bgcol = vec3(1,1,1);
-const float sample_distance = 0.01;
+uniform float sample_distance;
 vec3 render_volume() {
   vec3 cur_uvw = texture(cube_front_tex, uv_frag).rgb;
   vec3 uvw_back = texture(cube_back_tex, uv_frag).rgb;
@@ -22,7 +23,7 @@ vec3 render_volume() {
     for (int i = 0 ; i < num_steps + 1; ++i) {
       float sample       = texture(volume_data_tex, cur_uvw).r;
       vec3  sample_color = vec3(sample);
-      float sample_alpha = sample;
+      float sample_alpha = clamp(texture(alpha_tex, sample), 0, 1).r;
       accumulated_color +=
         (1 - accumulated_alpha) * sample_alpha * sample_color;
       accumulated_alpha +=

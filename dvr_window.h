@@ -10,8 +10,11 @@ struct dvr_window : yavin::window {
   cube_shader_t m_cube_shader;
   volume_shader_t m_volume_shader;
 
+  yavin::tex1r<float> m_alpha_tex;
+  std::vector<float> m_alpha_data;
   yavin::tex2rgb<float> m_cube_back_tex, m_cube_front_tex;
   yavin::tex3r<float> m_volume_data_tex;
+  size_t const m_num_alpha_samples = 100;
 
   yavin::indexeddata<vec3, vec3> m_cube_data;
   yavin::indexeddata<vec2> m_fullscreen_quad_data;
@@ -23,6 +26,7 @@ struct dvr_window : yavin::window {
   float m_fov = 60;
   float m_nearplane = 0.001;
   float m_farplane = 100;
+  float m_sample_distance = 0.01;
   //==============================================================================
   dvr_window();
   //==============================================================================
@@ -35,21 +39,5 @@ struct dvr_window : yavin::window {
   void render_volume();
   //------------------------------------------------------------------------------
   void render_cube();
-  //------------------------------------------------------------------------------
-  // EVENTS
-  //------------------------------------------------------------------------------
-  void on_resize(int new_width, int new_height) override;
-  //------------------------------------------------------------------------------
-  void on_key_pressed(yavin::key k) override;
-  //------------------------------------------------------------------------------
-  void on_mouse_motion(int x, int y) override;
-  //------------------------------------------------------------------------------
-  void on_button_pressed(yavin::button b) override;
-  //------------------------------------------------------------------------------
-  void on_button_released(yavin::button b) override;
-  //------------------------------------------------------------------------------
-  void on_wheel_up() override;
-  //------------------------------------------------------------------------------
-  void on_wheel_down() override;
 };
 #endif
