@@ -97,7 +97,7 @@ void dvr_window::update_modelview_matrix() {
 //------------------------------------------------------------------------------
 void dvr_window::render_loop() {
   bool run = true;
-  while (run) {
+  while (!should_close() && run) {
     refresh();
     static float v0[] = {0.0f, 0.0f, 0.5f, 0.0f};
     static float v1[] = {1.0f, 1.0f, 1.0f, 0.5f};

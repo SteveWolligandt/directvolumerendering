@@ -1,6 +1,6 @@
 #include "unit_cube.h"
 yavin::indexeddata<vec3, vec3> unit_cube() {
-  yavin::indexeddata<vec3, vec3>c;
+  yavin::indexeddata<vec3, vec3> c;
 
   c.vertexbuffer().reserve(8);
   c.vertexbuffer().push_back({-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f});
